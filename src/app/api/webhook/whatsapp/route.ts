@@ -95,15 +95,75 @@ export async function POST(request: Request) {
         return NextResponse.json({ status: 'evaluation_started' });
       }
 
-      // === FLUJO 2 y 3: PAGO MENSUALIDAD / TIENDA ===
-      if (qrToken.type === 'MEMBERSHIP' || qrToken.type === 'RETAIL') {
-        const typeLabel = qrToken.type === 'MEMBERSHIP' ? 'Pago de Mensualidad del Gimnasio' : 'Pago de Tienda Retail';
+      // === FLUJO 2: PAGO MENSUALIDAD (MENÚ DE PLANES) ===
+      if (qrToken.type === 'MEMBERSHIP') {
+        const plans = await prisma.membershipPlan.findMany({
+          where: { tenantId, isActive: true },
+          orderBy: { price: 'asc' },
+        });
+
+        if (plans.length === 0) {
+          // Fallback a monto libre si no hay planes creados
+          await prisma.chatSession.upsert({
+            where: { tenantId_phone: { tenantId, phone } },
+            update: {
+              step: 'ENTER_AMOUNT',
+              flowType: 'MEMBERSHIP',
+              pushName,
+              data: JSON.stringify({}),
+            },
+            create: {
+              tenantId,
+              phone,
+              pushName,
+              step: 'ENTER_AMOUNT',
+              flowType: 'MEMBERSHIP',
+              data: JSON.stringify({}),
+            },
+          });
+
+          await sendWhatsAppMessage(
+            phone,
+            `¡Hola ${pushName}! 💳 Has iniciado la verificación para: *Pago de Mensualidad del Gimnasio*.\n\nPor favor ingresa el *MONTO PAGADO* (Ejemplo: 120.00):`,
+            tenantId
+          );
+          return NextResponse.json({ status: 'payment_started_fallback' });
+        }
+
+        let menuText = `¡Hola ${pushName}! 💳 Bienvenido a la renovación de tu mensualidad.\n\nSelecciona el *PLAN DE MEMBRESÍA* que cancelaste respondiendo con el *NÚMERO*:\n\n`;
+        plans.forEach((p, index) => {
+          menuText += `*${index + 1}.* ${p.name} — $${Number(p.price).toFixed(2)} (${p.durationDays} días)\n`;
+        });
 
         await prisma.chatSession.upsert({
           where: { tenantId_phone: { tenantId, phone } },
           update: {
+            step: 'SELECT_MEMBERSHIP_PLAN',
+            flowType: 'MEMBERSHIP',
+            pushName,
+            data: JSON.stringify({ plans }),
+          },
+          create: {
+            tenantId,
+            phone,
+            pushName,
+            step: 'SELECT_MEMBERSHIP_PLAN',
+            flowType: 'MEMBERSHIP',
+            data: JSON.stringify({ plans }),
+          },
+        });
+
+        await sendWhatsAppMessage(phone, menuText, tenantId);
+        return NextResponse.json({ status: 'membership_plans_presented' });
+      }
+
+      // === FLUJO 3: PAGO DE TIENDA RETAIL (MONTO DIRECTO) ===
+      if (qrToken.type === 'RETAIL') {
+        await prisma.chatSession.upsert({
+          where: { tenantId_phone: { tenantId, phone } },
+          update: {
             step: 'ENTER_AMOUNT',
-            flowType: qrToken.type,
+            flowType: 'RETAIL',
             pushName,
             data: JSON.stringify({}),
           },
@@ -112,17 +172,17 @@ export async function POST(request: Request) {
             phone,
             pushName,
             step: 'ENTER_AMOUNT',
-            flowType: qrToken.type,
+            flowType: 'RETAIL',
             data: JSON.stringify({}),
           },
         });
 
         await sendWhatsAppMessage(
           phone,
-          `¡Hola ${pushName}! 💳 Has iniciado la verificación para: *${typeLabel}*.\n\nPor favor ingresa el *MONTO PAGADO en soles* (Ejemplo: 120.00):`,
+          `¡Hola ${pushName}! 🛍️ Has iniciado la verificación para: *Pago de Tienda Retail*.\n\nPor favor ingresa el *MONTO TOTAL PAGADO* en la tienda (Ejemplo: 45.00):`,
           tenantId
         );
-        return NextResponse.json({ status: 'payment_started' });
+        return NextResponse.json({ status: 'retail_payment_started' });
       }
 
       // Tipo de QR desconocido - silencio
@@ -239,8 +299,51 @@ export async function POST(request: Request) {
       }
     }
 
-    // === PASOS DE FLUJOS 2 y 3: PAGOS ===
-    if (activeSession.flowType === 'MEMBERSHIP' || activeSession.flowType === 'RETAIL') {
+    // === PASOS DEL FLUJO 2: PAGO DE MENSUALIDAD ===
+    if (activeSession.flowType === 'MEMBERSHIP') {
+      if (activeSession.step === 'SELECT_MEMBERSHIP_PLAN') {
+        const plans: Array<{ id: string; name: string; price: number; durationDays: number }> = sessionData.plans || [];
+        const selectionIndex = parseInt(textMessage, 10) - 1;
+
+        if (isNaN(selectionIndex) || selectionIndex < 0 || selectionIndex >= plans.length) {
+          await sendWhatsAppMessage(
+            phone,
+            `Por favor responde únicamente con un número del *1 al ${plans.length}* según la lista de planes.`,
+            tenantId
+          );
+          return NextResponse.json({ status: 'invalid_plan_selection' });
+        }
+
+        const selectedPlan = plans[selectionIndex];
+        const crypto = require('crypto');
+        const refCode = `MEM-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+        await prisma.payment.create({
+          data: {
+            tenantId,
+            customerName: pushName,
+            customerPhone: phone,
+            amount: selectedPlan.price,
+            type: 'MEMBERSHIP',
+            status: 'PENDING_VERIFICATION',
+            referenceCode: refCode,
+          },
+        });
+
+        await prisma.chatSession.update({
+          where: { id: activeSession.id },
+          data: { step: 'IDLE' },
+        });
+
+        await sendWhatsAppMessage(
+          phone,
+          `✅ *Solicitud de Membresía Registrada*\n\n*Plan:* ${selectedPlan.name} (${selectedPlan.durationDays} días)\n*Monto:* $ ${Number(selectedPlan.price).toFixed(2)}\n*Código:* ${refCode}\n*Cliente:* ${pushName}\n\nEl administrador verificará tu pago para activar tu membresía y otorgar la comisión al cliente que te refirió. ¡Gracias! 💪`,
+          tenantId
+        );
+
+        return NextResponse.json({ status: 'membership_payment_submitted' });
+      }
+
       if (activeSession.step === 'ENTER_AMOUNT') {
         const cleanAmountStr = textMessage.replace('S/', '').replace('s/', '').replace('$', '').trim();
         const amountNum = parseFloat(cleanAmountStr);
@@ -251,36 +354,73 @@ export async function POST(request: Request) {
         }
 
         const crypto = require('crypto');
-        const refCode = `PAY-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+        const refCode = `MEM-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
-        // Registrar pago pendiente de verificación del admin
         await prisma.payment.create({
           data: {
             tenantId,
             customerName: pushName,
             customerPhone: phone,
             amount: amountNum,
-            type: activeSession.flowType === 'MEMBERSHIP' ? 'MEMBERSHIP' : 'RETAIL_STORE',
+            type: 'MEMBERSHIP',
             status: 'PENDING_VERIFICATION',
             referenceCode: refCode,
           },
         });
 
-        // Cerrar sesión de chat
         await prisma.chatSession.update({
           where: { id: activeSession.id },
           data: { step: 'IDLE' },
         });
 
-        const flowName = activeSession.flowType === 'MEMBERSHIP' ? 'Mensualidad Gym' : 'Tienda Retail';
-
         await sendWhatsAppMessage(
           phone,
-          `✅ *Solicitud Registrada*\n\n*Tipo:* ${flowName}\n*Monto:* S/ ${amountNum.toFixed(2)}\n*Código:* ${refCode}\n*Cliente:* ${pushName}\n\nEl administrador verificará tu transacción para acumular tus puntos o saldo de referido. ¡Gracias por tu preferencia!`,
+          `✅ *Solicitud Registrada*\n\n*Tipo:* Mensualidad Gym\n*Monto:* $ ${amountNum.toFixed(2)}\n*Código:* ${refCode}\n*Cliente:* ${pushName}\n\nEl administrador verificará tu transacción. ¡Gracias por tu preferencia!`,
           tenantId
         );
 
         return NextResponse.json({ status: 'payment_submitted' });
+      }
+    }
+
+    // === PASOS DEL FLUJO 3: TIENDA RETAIL ===
+    if (activeSession.flowType === 'RETAIL') {
+      if (activeSession.step === 'ENTER_AMOUNT') {
+        const cleanAmountStr = textMessage.replace('S/', '').replace('s/', '').replace('$', '').trim();
+        const amountNum = parseFloat(cleanAmountStr);
+
+        if (isNaN(amountNum) || amountNum <= 0) {
+          await sendWhatsAppMessage(phone, `Por favor ingresa un monto válido en números. Ejemplo: *45.00*`, tenantId);
+          return NextResponse.json({ status: 'invalid_amount' });
+        }
+
+        const crypto = require('crypto');
+        const refCode = `RET-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+        await prisma.payment.create({
+          data: {
+            tenantId,
+            customerName: pushName,
+            customerPhone: phone,
+            amount: amountNum,
+            type: 'RETAIL_STORE',
+            status: 'PENDING_VERIFICATION',
+            referenceCode: refCode,
+          },
+        });
+
+        await prisma.chatSession.update({
+          where: { id: activeSession.id },
+          data: { step: 'IDLE' },
+        });
+
+        await sendWhatsAppMessage(
+          phone,
+          `✅ *Compra en Tienda Registrada*\n\n*Monto Total:* $ ${amountNum.toFixed(2)}\n*Código:* ${refCode}\n*Cliente:* ${pushName}\n\nEl administrador verificará tu compra para acreditar la comisión a tu referidor. ¡Gracias por tu preferencia! 🛍️`,
+          tenantId
+        );
+
+        return NextResponse.json({ status: 'retail_payment_submitted' });
       }
     }
 

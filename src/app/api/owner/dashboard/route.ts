@@ -111,6 +111,21 @@ export async function GET(request: Request) {
       },
     });
 
+    // All customers with metadata
+    const allCustomers = await prisma.customer.findMany({
+      where: { tenantId },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        membershipActive: true,
+        membershipExpiry: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
     });
@@ -124,6 +139,7 @@ export async function GET(request: Request) {
       pendingPayments,
       evaluations,
       wallets,
+      allCustomers,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Error en dashboard' }, { status: 500 });

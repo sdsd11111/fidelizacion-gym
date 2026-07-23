@@ -27,37 +27,44 @@ export async function POST(request: Request) {
       },
     });
 
-    // If membership payment approved, update customer membership state & add referral rewards if any
-    if (action === 'APPROVE' && payment.type === 'MEMBERSHIP') {
+    // If payment approved (MEMBERSHIP or RETAIL_STORE), process referral rewards
+    if (action === 'APPROVE') {
       const customer = await prisma.customer.findFirst({
         where: { tenantId, phone: payment.customerPhone },
       });
 
       if (customer) {
-        await prisma.customer.update({
-          where: { id: customer.id },
-          data: {
-            membershipActive: true,
-            membershipExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          },
-        });
+        if (payment.type === 'MEMBERSHIP') {
+          await prisma.customer.update({
+            where: { id: customer.id },
+            data: {
+              membershipActive: true,
+              membershipExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            },
+          });
+        }
 
-        // Activate referral if pending
+        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+        const commPct = payment.type === 'MEMBERSHIP' 
+          ? Number(tenant?.referralCommPct || 10) 
+          : Number(tenant?.storeReferralCommPct || 5);
+
+        // Find referral connection
         const referral = await prisma.referral.findFirst({
-          where: { tenantId, referredId: customer.id, status: 'PENDING' },
+          where: { tenantId, referredId: customer.id },
         });
 
         if (referral) {
-          const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-          const commPct = Number(tenant?.referralCommPct || 10);
           const commissionAmount = (Number(payment.amount) * commPct) / 100;
+          const currencySymbol = tenant?.currency === 'PEN' ? 'S/' : '$';
 
-          await prisma.referral.update({
-            where: { id: referral.id },
-            data: { status: 'ACTIVATED', activatedAt: new Date() },
-          });
+          if (referral.status === 'PENDING') {
+            await prisma.referral.update({
+              where: { id: referral.id },
+              data: { status: 'ACTIVATED', activatedAt: new Date() },
+            });
+          }
 
-          // Add commission to referrer wallet
           let referrerWallet = await prisma.wallet.findFirst({
             where: { tenantId, customerId: referral.referrerId },
           });
@@ -80,7 +87,7 @@ export async function POST(request: Request) {
               walletId: referrerWallet.id,
               type: 'CREDIT_COMMISSION',
               amount: commissionAmount,
-              description: `Comisión (${commPct}%) por primera compra/mensualidad de ${customer.name}`,
+              description: `Comisión (${commPct}%) por compra de ${payment.type === 'MEMBERSHIP' ? 'Mensualidad' : 'Tienda Retail'} de ${customer.name} (${currencySymbol} ${commissionAmount.toFixed(2)})`,
               expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
             },
           });

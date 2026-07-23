@@ -12,6 +12,8 @@ model Tenant {
   name                    String
   slug                    String         @unique
   referralCommPct         Decimal        @default(10.00) @db.Decimal(5, 2)
+  storeReferralCommPct    Decimal        @default(5.00) @db.Decimal(5, 2)
+  currency                String         @default("USD") // "USD" | "PEN"
   inactivityThresholdDays Int            @default(14)
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
@@ -26,6 +28,7 @@ model Tenant {
   notifications           NotificationLog[]
   payments                Payment[]
   qrTokens                QrToken[]
+  membershipPlans         MembershipPlan[]
 
   @@map("tenants")
 }
@@ -296,4 +299,20 @@ model ChatSession {
   @@unique([tenantId, phone])
   @@index([tenantId])
   @@map("chat_sessions")
+}
+
+model MembershipPlan {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String   // e.g. "Mensual", "Trimestral", "Semestral", "Anual"
+  durationDays Int     // 30, 90, 180, 365
+  price       Decimal  @db.Decimal(10, 2)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("membership_plans")
 }

@@ -4,24 +4,21 @@ import { verifyTenantAccess } from '@/lib/dal';
 
 export async function POST(request: Request) {
   try {
-    const { tenantId, user } = await verifyTenantAccess();
+    const { tenantId } = await verifyTenantAccess();
+    const { referralCommPct, storeReferralCommPct, currency, inactivityThresholdDays } = await request.json();
 
-    if (user.role !== 'OWNER') {
-      return NextResponse.json({ error: 'Solo el OWNER puede actualizar la configuración' }, { status: 403 });
-    }
-
-    const { referralCommPct, inactivityThresholdDays } = await request.json();
-
-    const updatedTenant = await prisma.tenant.update({
+    const tenant = await prisma.tenant.update({
       where: { id: tenantId },
       data: {
-        referralCommPct: referralCommPct !== undefined ? Number(referralCommPct) : undefined,
-        inactivityThresholdDays: inactivityThresholdDays !== undefined ? Number(inactivityThresholdDays) : undefined,
+        referralCommPct: Number(referralCommPct),
+        storeReferralCommPct: Number(storeReferralCommPct),
+        currency: currency === 'PEN' ? 'PEN' : 'USD',
+        inactivityThresholdDays: Number(inactivityThresholdDays),
       },
     });
 
-    return NextResponse.json({ success: true, tenant: updatedTenant });
+    return NextResponse.json({ success: true, tenant });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || 'Error actualizando configuración' }, { status: 500 });
+    return NextResponse.json({ error: error?.message || 'Error guardando configuración' }, { status: 500 });
   }
 }
