@@ -26,10 +26,11 @@ export async function POST(request: Request) {
     }
 
     // 1. Check if message contains a QR token code (starts a new flow)
-    const qrMatch = textMessage.match(/(evaluation_[a-f0-9]+|membership_[a-f0-9]+|retail_[a-f0-9]+)/i);
+    // Matches: EVAL-A1B2, MEM-XXXX, RET-XXXX (new short) or evaluation_xxx, membership_xxx, retail_xxx (legacy)
+    const qrMatch = textMessage.match(/(EVAL-[A-F0-9]{4}|MEM-[A-F0-9]{4}|RET-[A-F0-9]{4}|evaluation_[a-f0-9]+|membership_[a-f0-9]+|retail_[a-f0-9]+)/i);
 
     if (qrMatch) {
-      const scannedToken = qrMatch[1].toLowerCase();
+      const scannedToken = qrMatch[1];
       const qrToken = await prisma.qrToken.findFirst({
         where: { token: scannedToken },
       });

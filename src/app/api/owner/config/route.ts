@@ -5,7 +5,7 @@ import { verifyTenantAccess } from '@/lib/dal';
 export async function POST(request: Request) {
   try {
     const { tenantId } = await verifyTenantAccess();
-    const { referralCommPct, storeReferralCommPct, currency, inactivityThresholdDays } = await request.json();
+    const { referralCommPct, storeReferralCommPct, currency, inactivityThresholdDays, whatsappPhone } = await request.json();
 
     const tenant = await prisma.tenant.update({
       where: { id: tenantId },
@@ -13,6 +13,7 @@ export async function POST(request: Request) {
         referralCommPct: Number(referralCommPct),
         storeReferralCommPct: Number(storeReferralCommPct),
         currency: currency === 'PEN' ? 'PEN' : 'USD',
+        whatsappPhone: whatsappPhone ? String(whatsappPhone).replace(/\D/g, '') : null,
         inactivityThresholdDays: Number(inactivityThresholdDays),
       },
     });

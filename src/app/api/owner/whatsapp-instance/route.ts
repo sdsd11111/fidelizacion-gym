@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyTenantAccess } from '@/lib/dal';
+import { prisma } from '@/lib/prisma';
 
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://178.238.238.158:8080';
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '42a447c1-3d74-4b52-9571-042c174f7621';
@@ -48,11 +49,37 @@ export async function GET(request: Request) {
         const state = data?.instance?.state || 'DISCONNECTED';
 
         if (state === 'open') {
+          // Robust detection: fetch instance details to get connected number
+          let connectedPhone: string | null = null;
+          try {
+            const fetchRes = await fetch(`${EVOLUTION_API_URL}/instance/fetchInstances?instanceName=${instanceName}`, {
+              headers: { apikey: EVOLUTION_API_KEY },
+            });
+            if (fetchRes.ok) {
+              const fetchObj = await fetchRes.json();
+              const inst = Array.isArray(fetchObj) ? fetchObj[0] : fetchObj;
+              const ownerRaw = inst?.owner || inst?.ownerJid || inst?.instance?.ownerJid || inst?.number || data?.instance?.ownerJid || data?.instance?.number;
+              if (ownerRaw) {
+                connectedPhone = String(ownerRaw).replace(/\D/g, '');
+              }
+            }
+          } catch (e) {
+            console.error('Fetch instance detail error:', e);
+          }
+
+          if (connectedPhone && connectedPhone.length >= 8) {
+            await prisma.tenant.update({
+              where: { id: auth.tenantId },
+              data: { whatsappPhone: connectedPhone },
+            }).catch(() => {});
+          }
+
           return NextResponse.json({
             state: 'CONNECTED',
             instanceName,
             qrcode: null,
             webhookUrl,
+            whatsappPhone: connectedPhone,
           });
         }
       }

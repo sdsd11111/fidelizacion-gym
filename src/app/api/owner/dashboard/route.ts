@@ -26,12 +26,18 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Usuario no activo o no pertenece a este tenant' }, { status: 401 });
     }
 
-    // Generate or get dynamic single-use/rotating QR tokens for 3 flows
+    // Generate or get dynamic single-use/rotating QR tokens for 3 flows (Short 4-char code)
     const now = new Date();
-    const expiry = new Date(now.getTime() + 15 * 60 * 1000); // 15 mins validity
+    const expiry = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour validity
 
     const tokenTypes = ['EVALUATION', 'MEMBERSHIP', 'RETAIL'];
     const qrTokens: Record<string, string> = {};
+
+    const prefixMap: Record<string, string> = {
+      EVALUATION: 'EVAL',
+      MEMBERSHIP: 'MEM',
+      RETAIL: 'RET',
+    };
 
     for (const type of tokenTypes) {
       const existing = await prisma.qrToken.findFirst({
@@ -42,7 +48,8 @@ export async function GET(request: Request) {
       if (existing) {
         qrTokens[type] = existing.token;
       } else {
-        const newTokenStr = `${type.toLowerCase()}_${crypto.randomBytes(8).toString('hex')}`;
+        const shortCode = crypto.randomBytes(2).toString('hex').toUpperCase(); // 4 chars (e.g. A1B2)
+        const newTokenStr = `${prefixMap[type]}-${shortCode}`;
         const created = await prisma.qrToken.create({
           data: {
             tenantId,
@@ -53,6 +60,36 @@ export async function GET(request: Request) {
         });
         qrTokens[type] = created.token;
       }
+    }
+
+    // Auto-fetch connected instance number from Evolution API and save to DB if connected
+    let connectedPhone: string | null = null;
+    try {
+      const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || 'http://178.238.238.158:8080';
+      const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '42a447c1-3d74-4b52-9571-042c174f7621';
+
+      const evRes = await fetch(`${EVOLUTION_API_URL}/instance/fetchInstances`, {
+        headers: { apikey: EVOLUTION_API_KEY },
+      });
+
+      if (evRes.ok) {
+        const evInstances = await evRes.json();
+        const instArray = Array.isArray(evInstances) ? evInstances : [evInstances];
+        const activeInst = instArray.find((i: any) => i.name === 'default' || i.instance?.instanceName === 'default') || instArray[0];
+
+        const rawPhone = activeInst?.owner || activeInst?.instance?.ownerName || activeInst?.instance?.ownerJid || activeInst?.number;
+        if (rawPhone) {
+          connectedPhone = String(rawPhone).replace(/\D/g, '');
+          if (connectedPhone && connectedPhone.length >= 8) {
+            await prisma.tenant.update({
+              where: { id: tenantId },
+              data: { whatsappPhone: connectedPhone },
+            });
+          }
+        }
+      }
+    } catch (evErr) {
+      console.error('Error fetching Evolution instance number:', evErr);
     }
 
     // Metrics

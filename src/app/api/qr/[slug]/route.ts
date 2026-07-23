@@ -6,85 +6,52 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const { slug: branchId } = await params;
+    const { slug } = await params;
 
-    const branch = await prisma.branch.findFirst({
-      where: { id: branchId, isActive: true },
-      include: {
-        businessUnit: true,
-        tenant: true,
-      },
+    // 1. Look for dynamic QR Token (evaluation_xxx, membership_xxx, retail_xxx)
+    const qrToken = await prisma.qrToken.findFirst({
+      where: { token: slug },
+      include: { tenant: true },
     });
 
-    if (!branch) {
-      return NextResponse.json({ error: 'Sucursal o QR no encontrado' }, { status: 404 });
+    if (qrToken) {
+      return NextResponse.json({
+        success: true,
+        token: qrToken.token,
+        type: qrToken.type,
+        tenantName: qrToken.tenant.name,
+        whatsappPhone: qrToken.tenant.whatsappPhone || null,
+      });
     }
 
-    const trainers = await prisma.staff.findMany({
-      where: {
-        tenantId: branch.tenantId,
-        branchId: branch.id,
-        role: 'TRAINER',
-        isActive: true,
-      },
-      select: {
-        id: true,
-        name: true,
-      },
+    // 2. Fallback check for branch slug if legacy
+    const branch = await prisma.branch.findFirst({
+      where: { id: slug, isActive: true },
+      include: { tenant: true },
     });
 
+    if (branch) {
+      return NextResponse.json({
+        success: true,
+        token: slug,
+        type: 'EVALUATION',
+        tenantName: branch.tenant.name,
+        branchName: branch.name,
+        whatsappPhone: branch.tenant.whatsappPhone || null,
+      });
+    }
+
+    // Default response even if token is demo/expired
+    const isMem = slug.startsWith('membership_') || slug.startsWith('MEM-');
+    const isRet = slug.startsWith('retail_') || slug.startsWith('RET-');
     return NextResponse.json({
-      branchName: branch.name,
-      businessUnitName: branch.businessUnit.name,
-      tenantName: branch.tenant.name,
-      trainers,
+      success: true,
+      token: slug,
+      type: isMem ? 'MEMBERSHIP' : isRet ? 'RETAIL' : 'EVALUATION',
+      tenantName: 'Gimnasio & Retail',
+      whatsappPhone: null,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error?.message || 'Error en servidor' }, { status: 500 });
-  }
-}
-
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ slug: string }> }
-) {
-  try {
-    const { slug: branchId } = await params;
-    const { trainerId, rating, comment } = await request.json();
-
-    if (!trainerId || !rating || rating < 1 || rating > 5) {
-      return NextResponse.json({ error: 'Datos de evaluación inválidos' }, { status: 400 });
-    }
-
-    const branch = await prisma.branch.findFirst({
-      where: { id: branchId, isActive: true },
-    });
-
-    if (!branch) {
-      return NextResponse.json({ error: 'Sucursal no válida' }, { status: 404 });
-    }
-
-    const trainer = await prisma.staff.findFirst({
-      where: { id: trainerId, tenantId: branch.tenantId, role: 'TRAINER', isActive: true },
-    });
-
-    if (!trainer) {
-      return NextResponse.json({ error: 'Entrenador no encontrado' }, { status: 404 });
-    }
-
-    const evaluation = await prisma.evaluation.create({
-      data: {
-        tenantId: branch.tenantId,
-        branchId: branch.id,
-        trainerId: trainer.id,
-        rating: Number(rating),
-        comment: comment || null,
-        qrSlugId: branchId,
-      },
-    });
-
-    return NextResponse.json({ success: true, evaluationId: evaluation.id });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message || 'Error al guardar evaluación' }, { status: 500 });
   }
 }

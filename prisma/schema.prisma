@@ -14,6 +14,7 @@ model Tenant {
   referralCommPct         Decimal        @default(10.00) @db.Decimal(5, 2)
   storeReferralCommPct    Decimal        @default(5.00) @db.Decimal(5, 2)
   currency                String         @default("USD") // "USD" | "PEN"
+  whatsappPhone           String?        // Gym's WhatsApp Bot phone number (e.g. 51987654321)
   inactivityThresholdDays Int            @default(14)
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt

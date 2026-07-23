@@ -49,6 +49,7 @@ export default function DashboardPage() {
   const [commPct, setCommPct] = useState('');
   const [storeCommPct, setStoreCommPct] = useState('');
   const [inactivityDays, setInactivityDays] = useState('');
+  const [waPhone, setWaPhone] = useState('');
   const [configSaving, setConfigSaving] = useState(false);
   const [configMessage, setConfigMessage] = useState('');
 
@@ -93,6 +94,7 @@ export default function DashboardPage() {
       setCommPct(json.tenant?.referralCommPct || '10.00');
       setStoreCommPct(json.tenant?.storeReferralCommPct || '5.00');
       setInactivityDays(json.tenant?.inactivityThresholdDays || '14');
+      setWaPhone(json.tenant?.whatsappPhone || '');
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -122,6 +124,10 @@ export default function DashboardPage() {
         setWaState(json.state === 'CONNECTED' ? 'CONNECTED' : 'DISCONNECTED');
         setWaQr(json.qrcode);
         setWaInstanceName(json.instanceName || 'default');
+        if (json.whatsappPhone) {
+          setWaPhone(json.whatsappPhone);
+          loadDashboard(); // Refresh dashboard data if phone was newly saved
+        }
       } else { setWaState('DISCONNECTED'); }
     } catch { setWaState('DISCONNECTED'); }
     finally { setWaLoading(false); }
@@ -162,6 +168,7 @@ export default function DashboardPage() {
           storeReferralCommPct: storeCommPct,
           currency: 'USD',
           inactivityThresholdDays: inactivityDays,
+          whatsappPhone: waPhone,
         }),
       });
       const json = await res.json();
@@ -285,8 +292,13 @@ export default function DashboardPage() {
   }
 
   const getQRUrl = (token: string) => {
-    if (typeof window !== 'undefined') return `${window.location.origin}/qr/${token}`;
-    return `/qr/${token}`;
+    const phone = data?.tenant?.whatsappPhone || waPhone || '';
+    const cleanPhone = String(phone).replace(/\D/g, '');
+    const message = encodeURIComponent(`Hola este es mi codigo: ${token}`);
+    if (cleanPhone) {
+      return `https://wa.me/${cleanPhone}?text=${message}`;
+    }
+    return `https://wa.me/?text=${message}`;
   };
 
   const handleDownloadQR = (qrId: string, label: string) => {
@@ -812,8 +824,17 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-3">
                       <Check className="w-5 h-5 text-emerald-400 shrink-0" />
                       <div>
-                        <div className="font-bold text-[#FFFFFF] text-sm">Instancia Vinculada Correctamente</div>
-                        <div className="text-xs font-mono text-[#C5C6C7]">{waInstanceName}</div>
+                        <div className="font-bold text-[#FFFFFF] text-sm flex items-center gap-2">
+                          Instancia Vinculada Correctamente
+                          {(waPhone || data?.tenant?.whatsappPhone) && (
+                            <span className="px-2 py-0.5 bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 text-xs font-mono rounded">
+                              +{waPhone || data?.tenant?.whatsappPhone}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs font-mono text-[#C5C6C7]">
+                          Instancia: {waInstanceName}
+                        </div>
                       </div>
                     </div>
                     <button onClick={loadWhatsAppStatus} className="px-3 py-1.5 bg-[#1F2833] hover:bg-[#2C3E50] text-[#C5C6C7] text-xs font-semibold rounded border border-[#2C3E50] transition flex items-center justify-center gap-1.5 self-start sm:self-center">
@@ -851,8 +872,8 @@ export default function DashboardPage() {
 
               <form onSubmit={handleSaveConfig} className="bg-[#1F2833] border border-[#2C3E50] rounded-lg p-4 md:p-6 space-y-5">
                 <div className="border-b border-[#2C3E50] pb-3">
-                  <h3 className="font-title font-bold text-xs md:text-sm text-[#FFFFFF] tracking-wider uppercase">PORCENTAJE DE COMISIÓN POR REFERIDO</h3>
-                  <p className="text-xs text-[#C5C6C7] mt-0.5">Define qué porcentaje del monto pagado se acredita como saldo al cliente que refirió.</p>
+                  <h3 className="font-title font-bold text-xs md:text-sm text-[#FFFFFF] tracking-wider uppercase">COMISIONES POR REFERIDO & PARÁMETROS</h3>
+                  <p className="text-xs text-[#C5C6C7] mt-0.5">Configura las comisiones por referido para mensualidad, tienda retail e inactividad.</p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
