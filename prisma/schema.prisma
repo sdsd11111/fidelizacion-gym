@@ -1,0 +1,299 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id                      String         @id @default(uuid())
+  name                    String
+  slug                    String         @unique
+  referralCommPct         Decimal        @default(10.00) @db.Decimal(5, 2)
+  inactivityThresholdDays Int            @default(14)
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+
+  businessUnits           BusinessUnit[]
+  branches                Branch[]
+  wallets                 Wallet[]
+  customers               Customer[]
+  staff                   Staff[]
+  referrals               Referral[]
+  evaluations             Evaluation[]
+  notifications           NotificationLog[]
+  payments                Payment[]
+  qrTokens                QrToken[]
+
+  @@map("tenants")
+}
+
+enum BusinessUnitType {
+  GYM
+  RETAIL
+  SPA
+}
+
+model BusinessUnit {
+  id          String           @id @default(uuid())
+  tenantId    String
+  name        String
+  type        BusinessUnitType
+  isActive    Boolean          @default(true)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branches    Branch[]
+  staff       Staff[]
+
+  @@index([tenantId])
+  @@map("business_units")
+}
+
+model Branch {
+  id             String       @id @default(uuid())
+  tenantId       String
+  businessUnitId String
+  name           String
+  address        String?
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+  staff          Staff[]
+  evaluations    Evaluation[]
+
+  @@index([tenantId])
+  @@index([businessUnitId])
+  @@map("branches")
+}
+
+enum StaffRole {
+  OWNER
+  MANAGER
+  TRAINER
+}
+
+model Staff {
+  id             String        @id @default(uuid())
+  tenantId       String
+  businessUnitId String?
+  branchId       String?
+  name           String
+  phone          String?
+  email          String        @unique
+  passwordHash   String
+  role           StaffRole     @default(TRAINER)
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  businessUnit   BusinessUnit? @relation(fields: [businessUnitId], references: [id], onDelete: SetNull)
+  branch         Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  evaluations    Evaluation[]  @relation("TrainerEvaluations")
+
+  @@index([tenantId])
+  @@index([businessUnitId])
+  @@index([branchId])
+  @@map("staff")
+}
+
+model Customer {
+  id               String       @id @default(uuid())
+  tenantId         String
+  name             String
+  phone            String
+  email            String?
+  membershipActive Boolean      @default(true)
+  membershipExpiry DateTime?
+  lastAttendance   DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  tenant           Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  wallets          Wallet[]
+  referralsMade    Referral[]   @relation("ReferrerCustomer")
+  referralsReceived Referral[]  @relation("ReferredCustomer")
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+  @@map("customers")
+}
+
+model Wallet {
+  id           String              @id @default(uuid())
+  tenantId     String
+  customerId   String              @unique
+  balance      Decimal             @default(0.00) @db.Decimal(10, 2)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  transactions WalletTransaction[]
+
+  @@index([tenantId])
+  @@map("wallets")
+}
+
+enum TransactionType {
+  CREDIT_COMMISSION
+  DEBIT_REDEMPTION
+  EXPIRED
+}
+
+model WalletTransaction {
+  id               String          @id @default(uuid())
+  tenantId         String
+  walletId         String
+  type             TransactionType
+  amount           Decimal         @db.Decimal(10, 2)
+  description      String
+  expiresAt        DateTime?
+  redeemedAt       DateTime?
+  redeemedLocation String?
+  createdAt        DateTime        @default(now())
+
+  wallet           Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([walletId])
+  @@map("wallet_transactions")
+}
+
+enum ReferralStatus {
+  PENDING
+  ACTIVATED
+  EXPIRED
+}
+
+model Referral {
+  id                 String         @id @default(uuid())
+  tenantId           String
+  referrerId         String
+  referredId         String
+  businessUnitId     String?
+  branchId           String?
+  status             ReferralStatus @default(PENDING)
+  registeredAt       DateTime       @default(now())
+  expiresAt          DateTime
+  activatedAt        DateTime?
+  notifiedNearExpiry Boolean        @default(false)
+
+  tenant             Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  referrer           Customer       @relation("ReferrerCustomer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred           Customer       @relation("ReferredCustomer", fields: [referredId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([referrerId])
+  @@index([referredId])
+  @@map("referrals")
+}
+
+model Evaluation {
+  id          String    @id @default(uuid())
+  tenantId    String
+  branchId    String
+  trainerId   String
+  customerId  String?
+  rating      Int
+  comment     String?   @db.Text
+  qrSlugId    String
+  createdAt   DateTime  @default(now())
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch      Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  trainer     Staff     @relation("TrainerEvaluations", fields: [trainerId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([branchId])
+  @@index([trainerId])
+  @@map("evaluations")
+}
+
+enum NotificationType {
+  INACTIVITY
+  MEMBERSHIP_EXPIRY
+  REFERRAL_EXPIRY
+}
+
+model NotificationLog {
+  id           String           @id @default(uuid())
+  tenantId     String
+  phone        String
+  type         NotificationType
+  message      String           @db.Text
+  sentAt       DateTime         @default(now())
+  status       String           @default("SENT")
+
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("notification_logs")
+}
+
+enum PaymentType {
+  MEMBERSHIP
+  RETAIL_STORE
+}
+
+enum PaymentStatus {
+  PENDING_VERIFICATION
+  APPROVED
+  REJECTED
+}
+
+model Payment {
+  id               String        @id @default(uuid())
+  tenantId         String
+  customerName     String
+  customerPhone    String
+  amount           Decimal       @db.Decimal(10, 2)
+  type             PaymentType
+  status           PaymentStatus @default(PENDING_VERIFICATION)
+  referenceCode   String        @unique
+  verifiedByStaffId String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("payments")
+}
+
+model QrToken {
+  id         String   @id @default(uuid())
+  tenantId   String
+  type       String   // EVALUATION | MEMBERSHIP | RETAIL
+  token      String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("qr_tokens")
+}
+
+model ChatSession {
+  id           String   @id @default(uuid())
+  tenantId     String
+  phone        String
+  pushName     String?
+  step         String   // e.g. "SELECT_TRAINER" | "RATING" | "COMMENT" | "PAYMENT_AMOUNT" | "IDLE"
+  flowType     String   // "EVALUATION" | "MEMBERSHIP" | "RETAIL"
+  data         String?  @db.Text // JSON with collected answers (trainerId, rating, etc.)
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+
+  @@unique([tenantId, phone])
+  @@index([tenantId])
+  @@map("chat_sessions")
+}
