@@ -26,7 +26,7 @@ export async function GET(request: Request) {
         webhookUrl = `${protocol}://${host}/api/webhook/whatsapp`;
       }
 
-      // Auto-set webhook on Evolution API
+      // Auto-set webhook on Evolution API with correct payload structure
       fetch(`${EVOLUTION_API_URL}/webhook/set/${instanceName}`, {
         method: 'POST',
         headers: {
@@ -34,6 +34,13 @@ export async function GET(request: Request) {
           apikey: EVOLUTION_API_KEY,
         },
         body: JSON.stringify({
+          webhook: {
+            enabled: true,
+            url: webhookUrl,
+            byEvents: false,
+            base64: false,
+            events: ['MESSAGES_UPSERT'],
+          },
           url: webhookUrl,
           enabled: true,
           events: ['MESSAGES_UPSERT'],

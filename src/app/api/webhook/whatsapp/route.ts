@@ -6,18 +6,23 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // Evolution API Webhook Structure: body.data.key / body.data.message
-    const messageData = body?.data;
-    if (!messageData || messageData.key?.fromMe) {
+    // Evolution API Webhook Structure: can be in body.data or root body
+    const messageData = body?.data || body;
+    const key = messageData?.key || body?.key;
+
+    if (!messageData || key?.fromMe) {
       return NextResponse.json({ status: 'ignored' });
     }
 
-    const remoteJid = messageData.key?.remoteJid || '';
+    const remoteJid = key?.remoteJid || messageData?.remoteJid || '';
     const phone = remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
-    const pushName = messageData.pushName || 'Cliente';
+    const pushName = messageData?.pushName || body?.pushName || 'Cliente';
+    
+    const messageObj = messageData?.message || body?.message;
     const textMessage = (
-      messageData.message?.conversation ||
-      messageData.message?.extendedTextMessage?.text ||
+      messageObj?.conversation ||
+      messageObj?.extendedTextMessage?.text ||
+      messageData?.text ||
       ''
     ).trim();
 
