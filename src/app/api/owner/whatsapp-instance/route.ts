@@ -17,6 +17,28 @@ export async function GET(request: Request) {
     const instanceName = 'default';
 
     try {
+      // Dynamic host detection for production / Vercel
+      let webhookUrl = WEBHOOK_URL;
+      if (!webhookUrl) {
+        const host = request.headers.get('host') || 'fidelizacion-gym.vercel.app';
+        const protocol = host.includes('localhost') ? 'http' : 'https';
+        webhookUrl = `${protocol}://${host}/api/webhook/whatsapp`;
+      }
+
+      // Auto-set webhook on Evolution API
+      fetch(`${EVOLUTION_API_URL}/webhook/set/${instanceName}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: EVOLUTION_API_KEY,
+        },
+        body: JSON.stringify({
+          url: webhookUrl,
+          enabled: true,
+          events: ['MESSAGES_UPSERT'],
+        }),
+      }).catch((e) => console.error('Silent webhook set error:', e));
+
       const response = await fetch(`${EVOLUTION_API_URL}/instance/connectionState/${instanceName}`, {
         headers: { apikey: EVOLUTION_API_KEY },
       });
@@ -30,6 +52,7 @@ export async function GET(request: Request) {
             state: 'CONNECTED',
             instanceName,
             qrcode: null,
+            webhookUrl,
           });
         }
       }
@@ -45,6 +68,7 @@ export async function GET(request: Request) {
           state: 'DISCONNECTED',
           instanceName,
           qrcode,
+          webhookUrl,
         });
       }
 
@@ -52,6 +76,7 @@ export async function GET(request: Request) {
         state: 'DISCONNECTED',
         instanceName,
         qrcode: null,
+        webhookUrl,
       });
     } catch (apiError) {
       console.error('Evolution API reachability error:', apiError);
