@@ -95,13 +95,55 @@ export default function DashboardPage() {
     }
   }, []);
 
+  const urlBase64ToUint8Array = (base64String: string) => {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
   const requestPushPermission = async () => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       const perm = await Notification.requestPermission();
       setNotifPermission(perm);
+
       if (perm === 'granted') {
+        try {
+          // Register service worker if available and subscribe to PushManager
+          if ('serviceWorker' in navigator) {
+            const reg = await navigator.serviceWorker.ready.catch(() => null) ||
+              await navigator.serviceWorker.register('/sw.js').catch(() => null);
+
+            if (reg && reg.pushManager) {
+              const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BPhZFyScCH4K3tGvdqMmjPUR7ebMmCm7Fw4WNZO8nDbej8BGeArkhrDc7lZTb_uaLmPo0xuQ6_mcip_VjQShQWA';
+              const convertedVapidKey = urlBase64ToUint8Array(vapidKey);
+
+              let sub = await reg.pushManager.getSubscription();
+              if (!sub) {
+                sub = await reg.pushManager.subscribe({
+                  userVisibleOnly: true,
+                  applicationServerKey: convertedVapidKey,
+                });
+              }
+
+              // Send subscription object to backend database
+              await fetch('/api/owner/push-subscription', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ subscription: sub }),
+              });
+            }
+          }
+        } catch (pushErr) {
+          console.error('Error establishing Push Subscription:', pushErr);
+        }
+
         new Notification('🔔 ¡Notificaciones Activadas!', {
-          body: 'Hola Administrador, a partir de ahora recibirás alertas en tiempo real en este dispositivo cada vez que un cliente realice un pago de Mensualidad o Tienda.',
+          body: 'Hola Administrador, a partir de ahora recibirás alertas en tiempo real en este dispositivo cada vez que un cliente escanee un QR de Mensualidad o Tienda.',
           icon: '/favicon.ico',
         });
       }
@@ -526,7 +568,15 @@ export default function DashboardPage() {
                             <span className="text-[10px] bg-[#0B0C10] border border-[#2C3E50] text-[#B08D57] px-2 py-0.5 rounded font-mono">{p.referenceCode}</span>
                           </div>
                           <div className="text-xs text-[#C5C6C7]">WhatsApp: {p.customerPhone} • Tipo: {p.type === 'MEMBERSHIP' ? 'Mensualidad Gym' : 'Tienda Retail'}</div>
-                          <div className="font-number text-xl font-bold text-[#FFFFFF]">$ {Number(p.amount).toFixed(2)}</div>
+                          {Number(p.amount) > 0 ? (
+                            <div className="font-number text-xl font-bold text-[#FFFFFF]">
+                              {data?.tenant?.currency === 'PEN' ? 'S/' : '$'} {Number(p.amount).toFixed(2)}
+                            </div>
+                          ) : (
+                            <div className="text-xs font-title font-semibold text-emerald-400 bg-emerald-950/40 border border-emerald-800/40 px-2.5 py-1 rounded inline-block">
+                              SOLICITUD DE ACCESO / VERIFICACIÓN
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 self-end sm:self-center">
                           <button onClick={() => handleVerifyPayment(p.id, 'REJECT')} disabled={verifyingId === p.id} className="flex-1 sm:flex-initial flex items-center justify-center gap-1 px-3 py-2 bg-rose-950/50 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs font-bold uppercase rounded transition">

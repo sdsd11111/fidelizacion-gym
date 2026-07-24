@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendWhatsAppMessage } from '@/lib/evolution';
+import { sendOwnerPushNotification } from '@/lib/push';
 
 export async function POST(request: Request) {
   try {
@@ -138,6 +139,13 @@ export async function POST(request: Request) {
           },
         });
 
+        // Dispatch Push Notification to Owner's device/PWA
+        sendOwnerPushNotification(tenantId, {
+          title: '💳 ¡Solicitud de Mensualidad!',
+          body: `${pushName} solicita ingresar a verificación de Pago de Mensualidad. ¡Haz clic para aprobar!`,
+          url: '/dashboard',
+        }).catch(() => {});
+
         await sendWhatsAppMessage(
           phone,
           `¡Hola ${pushName}! ⏳ Hemos notificado a la administración/recepción del gimnasio sobre tu solicitud de *Pago de Mensualidad*.\n\nPor favor aguarda un momento mientras el administrador aprueba tu ingreso para continuar con la selección de tu plan. 💪`,
@@ -180,6 +188,13 @@ export async function POST(request: Request) {
             data: JSON.stringify({ refCode }),
           },
         });
+
+        // Dispatch Push Notification to Owner's device/PWA
+        sendOwnerPushNotification(tenantId, {
+          title: '🛍️ ¡Solicitud de Tienda Retail!',
+          body: `${pushName} solicita ingresar a verificación de Compra en Tienda. ¡Haz clic para aprobar!`,
+          url: '/dashboard',
+        }).catch(() => {});
 
         await sendWhatsAppMessage(
           phone,

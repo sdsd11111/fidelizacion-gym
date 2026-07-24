@@ -317,3 +317,15 @@ model MembershipPlan {
   @@index([tenantId])
   @@map("membership_plans")
 }
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  tenantId  String
+  endpoint  String   @db.Text
+  keys      String   @db.Text // JSON string containing { p256dh, auth }
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@map("push_subscriptions")
+}
