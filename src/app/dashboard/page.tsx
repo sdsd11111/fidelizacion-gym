@@ -30,13 +30,15 @@ import {
   Search,
   Phone,
   Calendar,
+  Gift,
+  Bell,
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'evaluations' | 'wallet' | 'config'>('overview');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Evaluation filters
   const [evalFilterTrainer, setEvalFilterTrainer] = useState('');
@@ -80,16 +82,60 @@ export default function DashboardPage() {
   const [redeemSuccess, setRedeemSuccess] = useState('');
   const [redeemError, setRedeemError] = useState('');
 
-  // Payment verification
+  // Payment verification & Push Notifications
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [notifPermission, setNotifPermission] = useState<string>('default');
+  const [prevPendingCount, setPrevPendingCount] = useState<number>(0);
 
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotifPermission(Notification.permission);
+    }
+  }, []);
+
+  const requestPushPermission = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      const perm = await Notification.requestPermission();
+      setNotifPermission(perm);
+      if (perm === 'granted') {
+        new Notification('🔔 ¡Notificaciones Activadas!', {
+          body: 'Hola Administrador, a partir de ahora recibirás alertas en tiempo real en este dispositivo cada vez que un cliente realice un pago de Mensualidad o Tienda.',
+          icon: '/favicon.ico',
+        });
+      }
+    }
+  };
 
   const loadDashboard = async () => {
     try {
       const res = await fetch('/api/owner/dashboard');
       if (res.status === 401) { router.push('/login'); return; }
       const json = await res.json();
+      
+      // Check if new pending payments arrived for Push notification alert
+      const newPending = json.pendingPayments || [];
+      if (newPending.length > prevPendingCount && prevPendingCount > 0) {
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          const latest = newPending[0];
+          const currencySymbol = json.tenant?.currency === 'PEN' ? 'S/' : '$';
+
+          if (latest.type === 'MEMBERSHIP') {
+            new Notification('💳 ¡Nuevo Pago de Mensualidad!', {
+              body: `${latest.customerName} solicita verificación de pago de Mensualidad por ${currencySymbol} ${Number(latest.amount).toFixed(2)}. ¡Haz clic para verificar!`,
+              icon: '/favicon.ico',
+            });
+          } else {
+            new Notification('🛍️ ¡Nuevo Pago en Tienda Retail!', {
+              body: `${latest.customerName} solicita verificación de compra en Tienda por ${currencySymbol} ${Number(latest.amount).toFixed(2)}. ¡Haz clic para verificar!`,
+              icon: '/favicon.ico',
+            });
+          }
+        }
+      }
+      setPrevPendingCount(newPending.length);
+
       setData(json);
       setCommPct(json.tenant?.referralCommPct || '10.00');
       setStoreCommPct(json.tenant?.storeReferralCommPct || '5.00');
@@ -98,6 +144,14 @@ export default function DashboardPage() {
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
+
+  // Auto-refresh dashboard every 12 seconds for pending payments
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadDashboard();
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [prevPendingCount]);
 
   const loadTrainers = async () => {
     try {
@@ -329,12 +383,18 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#0B0C10] text-[#FFFFFF] flex flex-col font-sans">
-      {/* Header */}
+      {/* Header with Universal Hamburger Menu */}
       <header className="bg-[#1F2833] border-b border-[#2C3E50] px-4 md:px-6 py-4 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
-          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 text-[#C5C6C7] hover:text-[#FFFFFF] bg-[#0B0C10] border border-[#2C3E50] rounded-md">
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 text-[#C5C6C7] hover:text-[#FFFFFF] bg-[#0B0C10] hover:bg-[#2C3E50] border border-[#2C3E50] rounded-md transition flex items-center justify-center gap-2"
+            title="Menú de Navegación"
+          >
+            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            <span className="text-xs font-title font-bold uppercase hidden sm:inline-block">MENÚ</span>
           </button>
+
           <div className="w-9 h-9 md:w-10 md:h-10 bg-[#0B0C10] border border-[#2C3E50] rounded-lg flex items-center justify-center text-[#B08D57]">
             <Award className="w-5 h-5" />
           </div>
@@ -349,28 +409,35 @@ export default function DashboardPage() {
       </header>
 
       <div className="flex flex-1 relative">
-        {/* Mobile backdrop */}
-        {mobileMenuOpen && <div className="fixed inset-0 bg-[#0B0C10]/80 backdrop-blur-sm z-20 md:hidden" onClick={() => setMobileMenuOpen(false)} />}
+        {/* Sidebar overlay backdrop for small screens when open */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-[#0B0C10]/80 backdrop-blur-sm z-20 sm:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
 
-        {/* Sidebar */}
-        <aside className={`fixed md:static inset-y-0 left-0 z-20 w-64 bg-[#0B0C10] border-r border-[#2C3E50] p-4 space-y-1 transform transition-transform duration-200 ease-in-out ${mobileMenuOpen ? 'translate-x-0 top-[65px]' : '-translate-x-full md:translate-x-0'}`}>
-          {([
-            { key: 'overview' as const, icon: Users, label: 'RESUMEN GENERAL', badge: data?.pendingPayments?.length || 0 },
-            { key: 'evaluations' as const, icon: Star, label: 'EVALUACIONES & CLIENTES', badge: 0 },
-            { key: 'wallet' as const, icon: Wallet, label: 'BILLETERA & CANJES', badge: 0 },
-            { key: 'config' as const, icon: Sliders, label: 'CONFIGURACIÓN OWNER', badge: 0 },
-          ]).map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => { setActiveTab(tab.key); setMobileMenuOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-md text-xs font-semibold transition tracking-wider font-title ${activeTab === tab.key ? 'bg-[#1F2833] text-[#FFFFFF] border border-[#2C3E50]' : 'text-[#C5C6C7] hover:bg-[#1F2833]/50'}`}
-            >
-              <tab.icon className="w-4 h-4 text-[#B08D57]" />
-              {tab.label}
-              {tab.badge ? <span className="ml-auto bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{tab.badge}</span> : null}
-            </button>
-          ))}
-        </aside>
+        {/* Collapsible Sidebar for both Desktop and Mobile */}
+        {sidebarOpen && (
+          <aside className="w-64 bg-[#0B0C10] border-r border-[#2C3E50] p-4 space-y-1 shrink-0 z-20 transition-all duration-200">
+            {([
+              { key: 'overview' as const, icon: Users, label: 'RESUMEN GENERAL', badge: data?.pendingPayments?.length || 0 },
+              { key: 'evaluations' as const, icon: Star, label: 'EVALUACIONES & CLIENTES', badge: 0 },
+              { key: 'wallet' as const, icon: Wallet, label: 'BILLETERA & CANJES', badge: 0 },
+              { key: 'config' as const, icon: Sliders, label: 'CONFIGURACIÓN OWNER', badge: 0 },
+            ]).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => { setActiveTab(tab.key); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-md text-xs font-semibold transition tracking-wider font-title ${activeTab === tab.key ? 'bg-[#1F2833] text-[#FFFFFF] border border-[#2C3E50]' : 'text-[#C5C6C7] hover:bg-[#1F2833]/50'}`}
+              >
+                <tab.icon className="w-4 h-4 text-[#B08D57]" />
+                {tab.label}
+                {tab.badge ? <span className="ml-auto bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{tab.badge}</span> : null}
+              </button>
+            ))}
+          </aside>
+        )}
 
         {/* Main */}
         <main className="flex-1 p-4 md:p-8 space-y-6 md:space-y-8 overflow-y-auto w-full">
@@ -484,7 +551,6 @@ export default function DashboardPage() {
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-[#FFFFFF] text-base group-hover:text-[#B08D57] transition">{t.name}</span>
-                          <span className="text-xs text-[#C5C6C7] bg-[#0B0C10] px-2 py-0.5 rounded border border-[#2C3E50]">{t.branchName}</span>
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="font-number text-2xl text-[#FFFFFF]">★ {t.ratingAvg}</span>
@@ -863,7 +929,40 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              {/* 3. REFERRAL PERCENTAGES */}
+              {/* 3. PWA / BROWSER NOTIFICATIONS */}
+              <div className="bg-[#1F2833] border border-[#2C3E50] rounded-lg p-4 md:p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#2C3E50] pb-3 gap-2">
+                  <div>
+                    <h3 className="font-title font-bold text-xs md:text-sm text-[#FFFFFF] tracking-wider uppercase flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-[#B08D57]" />
+                      NOTIFICACIONES EN TIEMPO REAL (PWA / CELULAR)
+                    </h3>
+                    <p className="text-xs text-[#C5C6C7] mt-0.5">Reciba alertas sonoras e instantáneas en su celular o PC cuando un cliente solicite verificar un pago.</p>
+                  </div>
+                  <span className={`px-2.5 py-1 rounded text-xs font-bold font-title tracking-wider ${notifPermission === 'granted' ? 'bg-emerald-950/80 border border-emerald-500/30 text-emerald-400' : 'bg-amber-950/40 border border-amber-800/50 text-amber-300'}`}>
+                    {notifPermission === 'granted' ? '● ACTIVADAS' : '○ DESACTIVADAS'}
+                  </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 bg-[#0B0C10] border border-[#2C3E50] rounded-lg">
+                  <div className="text-xs text-[#C5C6C7]">
+                    {notifPermission === 'granted'
+                      ? 'Las notificaciones instantáneas están activas en este navegador / dispositivo.'
+                      : 'Activa las notificaciones en tu celular o PC para recibir alertas en tiempo real al ingresar pagos de mensualidad o tienda.'}
+                  </div>
+                  {notifPermission !== 'granted' && (
+                    <button
+                      onClick={requestPushPermission}
+                      type="button"
+                      className="w-full sm:w-auto px-4 py-2 bg-[#C5C6C7] hover:bg-[#FFFFFF] text-[#000000] font-bold text-xs font-title tracking-wider uppercase rounded transition shrink-0 flex items-center justify-center gap-1.5"
+                    >
+                      <Bell className="w-3.5 h-3.5" /> ACTIVAR NOTIFICACIONES
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 4. REFERRAL PERCENTAGES */}
               {configMessage && (
                 <div className="p-4 bg-[#0B0C10] border border-[#2C3E50] rounded text-[#FFFFFF] text-sm flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-[#B08D57]" /> {configMessage}

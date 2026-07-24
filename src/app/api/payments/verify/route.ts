@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyTenantAccess } from '@/lib/dal';
+import { sendWhatsAppMessage } from '@/lib/evolution';
 
 export async function POST(request: Request) {
   try {
@@ -27,72 +28,87 @@ export async function POST(request: Request) {
       },
     });
 
-    // If payment approved (MEMBERSHIP or RETAIL_STORE), process referral rewards
+    // Send WhatsApp notification to client
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    const currencySymbol = tenant?.currency === 'PEN' ? 'S/' : '$';
+
     if (action === 'APPROVE') {
       const customer = await prisma.customer.findFirst({
         where: { tenantId, phone: payment.customerPhone },
       });
 
-      if (customer) {
-        if (payment.type === 'MEMBERSHIP') {
-          await prisma.customer.update({
-            where: { id: customer.id },
-            data: {
-              membershipActive: true,
-              membershipExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            },
-          });
-        }
+      // Find active chat session for this customer
+      const activeSession = await prisma.chatSession.findFirst({
+        where: { tenantId, phone: payment.customerPhone },
+      });
 
-        const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
-        const commPct = payment.type === 'MEMBERSHIP' 
-          ? Number(tenant?.referralCommPct || 10) 
-          : Number(tenant?.storeReferralCommPct || 5);
-
-        // Find referral connection
-        const referral = await prisma.referral.findFirst({
-          where: { tenantId, referredId: customer.id },
+      if (payment.type === 'MEMBERSHIP') {
+        const plans = await prisma.membershipPlan.findMany({
+          where: { tenantId, isActive: true },
+          orderBy: { price: 'asc' },
         });
 
-        if (referral) {
-          const commissionAmount = (Number(payment.amount) * commPct) / 100;
-          const currencySymbol = tenant?.currency === 'PEN' ? 'S/' : '$';
+        if (plans.length > 0) {
+          let menuText = `✅ *¡Solicitud Aprobada por Recepción!* 💪\n\nBienvenido a la renovación de tu mensualidad. Selecciona tu *PLAN DE MEMBRESÍA* respondiendo con el *NÚMERO*:\n\n`;
+          plans.forEach((p, index) => {
+            menuText += `*${index + 1}.* ${p.name} — ${currencySymbol} ${Number(p.price).toFixed(2)} (${p.durationDays} días)\n`;
+          });
 
-          if (referral.status === 'PENDING') {
-            await prisma.referral.update({
-              where: { id: referral.id },
-              data: { status: 'ACTIVATED', activatedAt: new Date() },
+          if (activeSession) {
+            await prisma.chatSession.update({
+              where: { id: activeSession.id },
+              data: {
+                step: 'SELECT_MEMBERSHIP_PLAN',
+                flowType: 'MEMBERSHIP',
+                data: JSON.stringify({ plans }),
+              },
             });
           }
 
-          let referrerWallet = await prisma.wallet.findFirst({
-            where: { tenantId, customerId: referral.referrerId },
-          });
-
-          if (!referrerWallet) {
-            referrerWallet = await prisma.wallet.create({
-              data: { tenantId, customerId: referral.referrerId, balance: 0 },
+          sendWhatsAppMessage(payment.customerPhone, menuText, tenantId).catch(() => {});
+        } else {
+          // Fallback if no plans
+          if (activeSession) {
+            await prisma.chatSession.update({
+              where: { id: activeSession.id },
+              data: { step: 'ENTER_AMOUNT', flowType: 'MEMBERSHIP', data: JSON.stringify({}) },
             });
           }
-
-          const newBal = Number(referrerWallet.balance) + commissionAmount;
-          await prisma.wallet.update({
-            where: { id: referrerWallet.id },
-            data: { balance: newBal },
-          });
-
-          await prisma.walletTransaction.create({
-            data: {
-              tenantId,
-              walletId: referrerWallet.id,
-              type: 'CREDIT_COMMISSION',
-              amount: commissionAmount,
-              description: `Comisión (${commPct}%) por compra de ${payment.type === 'MEMBERSHIP' ? 'Mensualidad' : 'Tienda Retail'} de ${customer.name} (${currencySymbol} ${commissionAmount.toFixed(2)})`,
-              expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-            },
+          sendWhatsAppMessage(
+            payment.customerPhone,
+            `✅ *¡Solicitud Aprobada por Recepción!* 💳 Por favor ingresa el *MONTO PAGADO* (Ejemplo: 120.00):`,
+            tenantId
+          ).catch(() => {});
+        }
+      } else if (payment.type === 'RETAIL_STORE') {
+        if (activeSession) {
+          await prisma.chatSession.update({
+            where: { id: activeSession.id },
+            data: { step: 'ENTER_AMOUNT', flowType: 'RETAIL', data: JSON.stringify({}) },
           });
         }
+
+        sendWhatsAppMessage(
+          payment.customerPhone,
+          `✅ *¡Solicitud Aprobada por Recepción!* 🛍️ Por favor ingresa el *MONTO TOTAL PAGADO* en la tienda (Ejemplo: 45.00):`,
+          tenantId
+        ).catch(() => {});
       }
+    } else {
+      // Admin rejected request
+      const activeSession = await prisma.chatSession.findFirst({
+        where: { tenantId, phone: payment.customerPhone },
+      });
+
+      if (activeSession) {
+        await prisma.chatSession.update({
+          where: { id: activeSession.id },
+          data: { step: 'IDLE' },
+        });
+      }
+
+      const messageText = `❌ *Solicitud No Aprobada*\n\nHola ${payment.customerName || 'Cliente'}, tu solicitud no pudo ser aprobada por recepción en este momento. Por favor acércate a caja.`;
+      sendWhatsAppMessage(payment.customerPhone, messageText, tenantId).catch(() => {});
     }
 
     return NextResponse.json({ success: true, payment: updatedPayment });
