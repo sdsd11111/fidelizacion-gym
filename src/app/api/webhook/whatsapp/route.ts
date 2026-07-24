@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
       const tenantId = qrToken.tenantId;
 
-      // Registrar cliente automáticamente con nombre y teléfono de WhatsApp
+      // Registrar cliente automáticamente con nombre y teléfono de WhatsApp y su billetera
       let customer = await prisma.customer.findFirst({
         where: { tenantId, phone },
       });
@@ -59,6 +59,20 @@ export async function POST(request: Request) {
             tenantId,
             name: pushName,
             phone,
+          },
+        });
+      }
+
+      // Asegurar que el cliente tenga siempre su billetera de recompensas creada
+      let wallet = await prisma.wallet.findFirst({
+        where: { tenantId, customerId: customer.id },
+      });
+      if (!wallet) {
+        await prisma.wallet.create({
+          data: {
+            tenantId,
+            customerId: customer.id,
+            balance: 0,
           },
         });
       }
@@ -337,6 +351,18 @@ export async function POST(request: Request) {
         const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
         const currencySymbol = tenant?.currency === 'PEN' ? 'S/' : '$';
 
+        // Update payment record amount in database
+        const pendingPayment = await prisma.payment.findFirst({
+          where: { tenantId, customerPhone: phone, type: 'MEMBERSHIP' },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (pendingPayment) {
+          await prisma.payment.update({
+            where: { id: pendingPayment.id },
+            data: { amount: selectedPlan.price },
+          });
+        }
+
         // 1. Activate customer membership
         let customer = await prisma.customer.findFirst({ where: { tenantId, phone } });
         if (customer) {
@@ -427,6 +453,18 @@ export async function POST(request: Request) {
 
         const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
         const currencySymbol = tenant?.currency === 'PEN' ? 'S/' : '$';
+
+        // Update payment record amount in database
+        const pendingPayment = await prisma.payment.findFirst({
+          where: { tenantId, customerPhone: phone, type: 'RETAIL_STORE' },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (pendingPayment) {
+          await prisma.payment.update({
+            where: { id: pendingPayment.id },
+            data: { amount: amountNum },
+          });
+        }
 
         let customer = await prisma.customer.findFirst({ where: { tenantId, phone } });
         if (customer) {

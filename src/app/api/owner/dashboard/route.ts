@@ -140,6 +140,16 @@ export async function GET(request: Request) {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Auto-create missing wallets for any existing customer safely
+    const allCustomersList = await prisma.customer.findMany({ where: { tenantId } });
+    for (const c of allCustomersList) {
+      await prisma.wallet.upsert({
+        where: { customerId: c.id },
+        update: {},
+        create: { tenantId, customerId: c.id, balance: 0 },
+      }).catch(() => {});
+    }
+
     const wallets = await prisma.wallet.findMany({
       where: { tenantId },
       include: {
@@ -148,20 +158,30 @@ export async function GET(request: Request) {
       },
     });
 
-    // All customers with metadata
-    const allCustomers = await prisma.customer.findMany({
+    const allPayments = await prisma.payment.findMany({
       where: { tenantId },
-      select: {
-        id: true,
-        name: true,
-        phone: true,
-        membershipActive: true,
-        membershipExpiry: true,
-        createdAt: true,
-        updatedAt: true,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const rawCustomers = await prisma.customer.findMany({
+      where: { tenantId },
+      include: {
+        wallets: {
+          include: { transactions: { orderBy: { createdAt: 'desc' } } },
+        },
+        referralsMade: {
+          include: { referred: { select: { name: true, phone: true } } },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    const allCustomers = rawCustomers.map((c) => ({
+      ...c,
+      payments: allPayments.filter((p) => p.customerPhone === c.phone),
+      evaluations: evaluations.filter((e) => e.customerId === c.id),
+      referralsGiven: c.referralsMade,
+    }));
 
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },

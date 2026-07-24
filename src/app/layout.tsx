@@ -21,8 +21,8 @@ const bebasNeue = Bebas_Neue({
 });
 
 export const metadata: Metadata = {
-  title: "Gimnasios & Retail - Fideliz SaaS",
-  description: "Plataforma Premium de Fidelización y Evaluaciones para Gimnasios y Tiendas",
+  title: "ALL-crm — Plataforma de Fidelización & Retención",
+  description: "Plataforma Inteligente de Fidelización, Comisiones por Referidos y Evaluaciones para Gimnasios y Tiendas Retail.",
 };
 
 export default function RootLayout({
