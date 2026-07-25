@@ -39,8 +39,12 @@ export default function DashboardOverviewPage() {
   };
 
   const getQRUrl = (token: string) => {
-    if (typeof window === 'undefined') return '';
-    return `${window.location.origin}/qr/${token}`;
+    const rawPhone = data?.tenant?.whatsappPhone || '593967491847';
+    const cleanPhone = rawPhone.replace(/\D/g, '');
+    const messageText = `Hola este es mi codigo: ${token}`;
+    return cleanPhone
+      ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText)}`
+      : `https://wa.me/?text=${encodeURIComponent(messageText)}`;
   };
 
   const handleDownloadQR = (elementId: string, filename: string) => {
