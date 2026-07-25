@@ -26,6 +26,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Usuario no activo o no pertenece a este tenant' }, { status: 401 });
     }
 
+    const tenantInfo = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { isActive: true },
+    });
+
+    if (session.role !== 'SUPERADMIN' && tenantInfo && tenantInfo.isActive === false) {
+      const response = NextResponse.json({ error: 'Esta cuenta ha sido pausada por la administración' }, { status: 403 });
+      response.cookies.delete('session');
+      return response;
+    }
+
     // Generate or get dynamic single-use/rotating QR tokens for 3 flows (Short 4-char code)
     const now = new Date();
     const expiry = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour validity

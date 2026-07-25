@@ -20,6 +20,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Credenciales inválidas o usuario inactivo' }, { status: 401 });
     }
 
+    if (staff.role !== 'SUPERADMIN' && staff.tenant && staff.tenant.isActive === false) {
+      return NextResponse.json({ error: 'Esta cuenta ha sido pausada por la administración. Comunícate con soporte.' }, { status: 403 });
+    }
+
     const isValid = await bcrypt.compare(password, staff.passwordHash);
     if (!isValid) {
       return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });

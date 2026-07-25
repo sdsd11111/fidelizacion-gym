@@ -79,6 +79,10 @@ export default function DashboardLayout({
     return data.tenant[item.key] !== false;
   });
 
+  // Check if current route is disabled by SuperAdmin
+  const currentNavItem = allNavItems.find((item) => item.href === pathname);
+  const isCurrentTabDisabled = data?.tenant && currentNavItem && data.tenant[currentNavItem.key] === false;
+
   if (data?.tenant && data.tenant.isActive === false) {
     return (
       <div className="min-h-screen bg-[#02050B] text-[#FFFFFF] flex items-center justify-center p-4">
@@ -96,6 +100,28 @@ export default function DashboardLayout({
           >
             Volver al Inicio
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (isCurrentTabDisabled) {
+    return (
+      <div className="min-h-screen bg-[#02050B] text-[#FFFFFF] flex items-center justify-center p-4">
+        <div className="sharp-panel p-8 text-center max-w-md space-y-4 border border-amber-800/60">
+          <div className="w-12 h-12 bg-amber-950/60 border border-amber-800 rounded-sm flex items-center justify-center text-amber-300 mx-auto">
+            <Sliders className="w-6 h-6" />
+          </div>
+          <h2 className="font-title text-lg font-bold text-amber-300">PESTAÑA NO INCLUIDA EN TU PLAN</h2>
+          <p className="text-xs text-[#7A93B2]">
+            Esta sección ha sido desactivada para tu cuenta. Contacta al Administrador para habilitar esta funcionalidad.
+          </p>
+          <Link
+            href={navItems[0]?.href || '/dashboard'}
+            className="px-4 py-2 bg-[#00F5D4] text-[#02050B] font-bold text-xs font-title tracking-wider uppercase rounded-sm transition inline-block glow-cyan"
+          >
+            Ir a Sección Disponible
+          </Link>
         </div>
       </div>
     );

@@ -130,20 +130,27 @@ export default function SuperAdminPage() {
   };
 
   const handleToggleTenantStatus = async (tenantId: string, currentStatus: boolean) => {
+    const nextStatus = !currentStatus;
+    // Optimistic UI Update
+    setTenants((prev) =>
+      prev.map((t) => (t.id === tenantId ? { ...t, isActive: nextStatus } : t))
+    );
     setActionLoading(tenantId);
+
     try {
       const res = await fetch('/api/admin/tenants', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId,
-          isActive: !currentStatus,
+          isActive: nextStatus,
         }),
       });
 
       if (res.ok) loadTenants();
     } catch (e) {
       console.error(e);
+      loadTenants();
     } finally {
       setActionLoading(null);
     }
@@ -154,20 +161,27 @@ export default function SuperAdminPage() {
     tabKey: 'showOverviewTab' | 'showEvaluationsTab' | 'showWalletTab' | 'showConfigTab',
     currentValue: boolean
   ) => {
+    const nextValue = !currentValue;
+    // Optimistic UI Update
+    setTenants((prev) =>
+      prev.map((t) => (t.id === tenantId ? { ...t, [tabKey]: nextValue } : t))
+    );
     setActionLoading(`${tenantId}-${tabKey}`);
+
     try {
       const res = await fetch('/api/admin/tenants', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId,
-          [tabKey]: !currentValue,
+          [tabKey]: nextValue,
         }),
       });
 
       if (res.ok) loadTenants();
     } catch (e) {
       console.error(e);
+      loadTenants();
     } finally {
       setActionLoading(null);
     }
