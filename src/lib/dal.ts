@@ -8,7 +8,7 @@ const key = new TextEncoder().encode(secretKey);
 export interface SessionPayload {
   userId: string;
   tenantId: string;
-  role: 'OWNER' | 'MANAGER' | 'TRAINER';
+  role: 'SUPERADMIN' | 'OWNER' | 'MANAGER' | 'TRAINER';
   email: string;
 }
 
@@ -16,7 +16,7 @@ export async function encryptSession(payload: SessionPayload): Promise<string> {
   return new SignJWT({ ...payload })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('7d')
+    .setExpirationTime('365d')
     .sign(key);
 }
 

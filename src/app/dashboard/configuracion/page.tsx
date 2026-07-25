@@ -12,10 +12,10 @@ import {
   CreditCard,
   CheckCircle,
 } from 'lucide-react';
+import { useDashboard } from '../layout';
 
 export default function ConfigPage() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refreshData } = useDashboard();
 
   // Config state
   const [commPct, setCommPct] = useState('');
@@ -47,25 +47,16 @@ export default function ConfigPage() {
   // Browser WebPush Notifications permission state
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
 
-  const loadData = async () => {
-    try {
-      const res = await fetch('/api/owner/dashboard');
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-        setCommPct(json.tenant?.referralCommissionPct?.toString() || '10');
-        setStoreCommPct(json.tenant?.storeReferralCommissionPct?.toString() || '5');
-        setInactivityDays(json.tenant?.inactivityDaysThreshold?.toString() || '30');
-        setWaPhone(json.tenant?.whatsappPhone || '');
-        setTrainers(json.trainers || []);
-        setPlans(json.plans || []);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (data) {
+      setCommPct(data.tenant?.referralCommissionPct?.toString() || '10');
+      setStoreCommPct(data.tenant?.storeReferralCommissionPct?.toString() || '5');
+      setInactivityDays(data.tenant?.inactivityDaysThreshold?.toString() || '30');
+      setWaPhone(data.tenant?.whatsappPhone || '');
+      setTrainers(data.trainers || []);
+      setPlans(data.plans || []);
     }
-  };
+  }, [data]);
 
   const loadWhatsAppStatus = async () => {
     try {
@@ -84,7 +75,6 @@ export default function ConfigPage() {
   };
 
   useEffect(() => {
-    loadData();
     loadWhatsAppStatus();
 
     if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -171,7 +161,7 @@ export default function ConfigPage() {
       if (!res.ok) throw new Error(json.error || 'Error al agregar entrenador');
       setNewTrainerName('');
       setTrainerMessage(' Coach agregado exitosamente');
-      loadData();
+      refreshData();
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -183,7 +173,7 @@ export default function ConfigPage() {
     if (!confirm('¿Seguro de eliminar este entrenador?')) return;
     try {
       const res = await fetch(`/api/owner/trainers?id=${trainerId}`, { method: 'DELETE' });
-      if (res.ok) loadData();
+      if (res.ok) refreshData();
     } catch (e) {
       console.error(e);
     }
@@ -208,7 +198,7 @@ export default function ConfigPage() {
       setNewPlanName('');
       setNewPlanPrice('');
       setPlanMessage(' Plan de membresía creado exitosamente');
-      loadData();
+      refreshData();
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -220,7 +210,7 @@ export default function ConfigPage() {
     if (!confirm('¿Seguro de eliminar este plan de membresía?')) return;
     try {
       const res = await fetch(`/api/owner/plans?id=${planId}`, { method: 'DELETE' });
-      if (res.ok) loadData();
+      if (res.ok) refreshData();
     } catch (e) {
       console.error(e);
     }
@@ -244,7 +234,7 @@ export default function ConfigPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Error al guardar la configuración');
       setConfigMessage(' Configuración guardada correctamente.');
-      loadData();
+      refreshData();
     } catch (err: any) {
       alert(err.message);
     } finally {
@@ -252,7 +242,7 @@ export default function ConfigPage() {
     }
   };
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="p-8 text-center text-[#7A93B2] font-mono text-sm">
         Cargando Configuración Owner...

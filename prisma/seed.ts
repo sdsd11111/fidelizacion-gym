@@ -8,11 +8,11 @@ async function main() {
 
   // Create default tenant for Gym & Retail owner
   const tenant = await prisma.tenant.upsert({
-    where: { slug: 'fit-retail-demo' },
+    where: { slug: 'energym' },
     update: {},
     create: {
-      name: 'Gimnasio & Retail Fideliz',
-      slug: 'fit-retail-demo',
+      name: 'Energym',
+      slug: 'energym',
       referralCommPct: 15.00,
       inactivityThresholdDays: 14,
     },
@@ -57,15 +57,15 @@ async function main() {
   });
 
   // Create Staff: Owner & Trainers
-  const passwordHash = await bcrypt.hash('admin123', 10);
+  const passwordHash = await bcrypt.hash('Energym123.', 10);
 
   const owner = await prisma.staff.upsert({
-    where: { email: 'owner@gimnasio.com' },
-    update: {},
+    where: { email: 'Energym' },
+    update: { passwordHash },
     create: {
       tenantId: tenant.id,
-      name: 'Cesar Owner',
-      email: 'owner@gimnasio.com',
+      name: 'Energym Owner',
+      email: 'Energym',
       passwordHash,
       role: 'OWNER',
       phone: '51987654321',
@@ -153,7 +153,7 @@ async function main() {
   });
 
   console.log('Seed completed successfully!');
-  console.log(`Owner Login Credentials: email: owner@gimnasio.com | password: admin123`);
+  console.log(`Owner Login Credentials: usuario: Energym | password: Energym123.`);
 }
 
 main()

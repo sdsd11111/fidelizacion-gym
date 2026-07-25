@@ -1,0 +1,24 @@
+{
+  "name": "ALL-crm — Fidelización & Retención",
+  "short_name": "ALL-crm",
+  "description": "Plataforma Inteligente de Fidelización & Retención",
+  "start_url": "/login",
+  "display": "standalone",
+  "background_color": "#02050B",
+  "theme_color": "#00F5D4",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/branding/app_icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/branding/app_icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

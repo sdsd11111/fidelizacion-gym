@@ -16,6 +16,11 @@ model Tenant {
   currency                String         @default("USD") // "USD" | "PEN"
   whatsappPhone           String?        // Gym's WhatsApp Bot phone number (e.g. 51987654321)
   inactivityThresholdDays Int            @default(14)
+  isActive                Boolean        @default(true)
+  showOverviewTab         Boolean        @default(true)
+  showEvaluationsTab      Boolean        @default(true)
+  showWalletTab           Boolean        @default(true)
+  showConfigTab           Boolean        @default(true)
   createdAt               DateTime       @default(now())
   updatedAt               DateTime       @updatedAt
 
@@ -78,6 +83,7 @@ model Branch {
 }
 
 enum StaffRole {
+  SUPERADMIN
   OWNER
   MANAGER
   TRAINER

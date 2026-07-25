@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import {
   Users,
@@ -14,29 +14,11 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useDashboard } from './layout';
 
 export default function DashboardOverviewPage() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refreshData } = useDashboard();
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
-
-  const loadData = async () => {
-    try {
-      const res = await fetch('/api/owner/dashboard');
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
 
   const handleVerifyPayment = async (paymentId: string, action: 'APPROVE' | 'REJECT') => {
     setVerifyingId(paymentId);
@@ -47,7 +29,7 @@ export default function DashboardOverviewPage() {
         body: JSON.stringify({ paymentId, action }),
       });
       if (res.ok) {
-        loadData();
+        refreshData();
       }
     } catch (e) {
       console.error(e);
@@ -73,7 +55,7 @@ export default function DashboardOverviewPage() {
     document.body.removeChild(downloadLink);
   };
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="p-8 text-center text-[#7A93B2] font-mono text-sm">
         Cargando Resumen General de ALL-crm...

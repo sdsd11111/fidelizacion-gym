@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Star,
   Users,
@@ -12,10 +12,10 @@ import {
   CreditCard,
   ShoppingBag,
 } from 'lucide-react';
+import { useDashboard } from '../layout';
 
 export default function EvaluationsPage() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loading } = useDashboard();
 
   // Evaluation filters
   const [evalFilterTrainer, setEvalFilterTrainer] = useState('');
@@ -27,24 +27,6 @@ export default function EvaluationsPage() {
   const [evalLimit, setEvalLimit] = useState(5);
   const [selectedCustomerModal, setSelectedCustomerModal] = useState<any>(null);
   const [modalTab, setModalTab] = useState<'membership' | 'retail' | 'evaluations'>('membership');
-
-  const loadData = async () => {
-    try {
-      const res = await fetch('/api/owner/dashboard');
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
 
   const filteredEvaluations = (data?.evaluations || []).filter((ev: any) => {
     if (evalFilterTrainer && ev.trainerId !== evalFilterTrainer) return false;
@@ -58,7 +40,7 @@ export default function EvaluationsPage() {
     return c.name?.toLowerCase().includes(q) || c.phone?.includes(q);
   });
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="p-8 text-center text-[#7A93B2] font-mono text-sm">
         Cargando Evaluaciones y Registro de Clientes...
@@ -316,7 +298,7 @@ export default function EvaluationsPage() {
               </button>
             </div>
 
-            {/* Modal Sub-Tabs Header (Grid 3 Columns - Square Tabs) */}
+            {/* Modal Sub-Tabs Header */}
             <div className="bg-[#02050B] border-b border-[#0E1B2E] p-1.5 grid grid-cols-3 gap-1">
               {[
                 {
@@ -362,7 +344,6 @@ export default function EvaluationsPage() {
 
             {/* Modal Content Area */}
             <div className="p-5 space-y-5 overflow-y-auto flex-1">
-              {/* TAB 1: MENSUALIDAD GYM & REFERIDOS UNIFICADOS */}
               {modalTab === 'membership' && (
                 <div className="space-y-5">
                   <div className="flex items-center justify-between p-3.5 bg-[#02050B] border border-[#0E1B2E] rounded-sm">
@@ -427,7 +408,6 @@ export default function EvaluationsPage() {
                 </div>
               )}
 
-              {/* TAB 2: TIENDA RETAIL */}
               {modalTab === 'retail' && (
                 <div className="space-y-2">
                   <h4 className="font-title text-xs font-bold text-[#FFFFFF] tracking-wider uppercase flex items-center gap-1.5">
@@ -463,7 +443,6 @@ export default function EvaluationsPage() {
                 </div>
               )}
 
-              {/* TAB 3: OPINIÓN COACHES */}
               {modalTab === 'evaluations' && (
                 <div className="space-y-2">
                   <h4 className="font-title text-xs font-bold text-[#FFFFFF] tracking-wider uppercase flex items-center gap-1.5">

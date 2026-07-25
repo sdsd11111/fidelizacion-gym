@@ -92,25 +92,60 @@ export async function GET(request: Request) {
       console.error('Error fetching Evolution instance number:', evErr);
     }
 
-    // Metrics
-    const totalCustomers = await prisma.customer.count({
-      where: { tenantId },
-    });
-
-    const activeMemberships = await prisma.customer.count({
-      where: { tenantId, membershipActive: true },
-    });
-
-    // Trainers with short summary (name, stars average, review count)
-    const trainers = await prisma.staff.findMany({
-      where: { tenantId, role: 'TRAINER', isActive: true },
-      include: {
-        evaluations: {
-          select: { rating: true, comment: true, createdAt: true },
+    // Optimized parallel data fetching for dashboard
+    const [
+      totalCustomers,
+      activeMemberships,
+      trainers,
+      pendingPayments,
+      evaluations,
+      rawCustomers,
+      tenant,
+    ] = await Promise.all([
+      prisma.customer.count({ where: { tenantId } }),
+      prisma.customer.count({ where: { tenantId, membershipActive: true } }),
+      prisma.staff.findMany({
+        where: { tenantId, role: 'TRAINER', isActive: true },
+        include: {
+          evaluations: { select: { rating: true, comment: true, createdAt: true } },
+          branch: { select: { name: true } },
         },
-        branch: { select: { name: true } },
-      },
-    });
+      }),
+      prisma.payment.findMany({
+        where: { tenantId, status: 'PENDING_VERIFICATION' },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.evaluation.findMany({
+        where: { tenantId },
+        include: {
+          trainer: { select: { id: true, name: true } },
+          branch: { select: { id: true, name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.customer.findMany({
+        where: { tenantId },
+        include: {
+          wallets: { include: { transactions: { orderBy: { createdAt: 'desc' } } } },
+          referralsMade: { include: { referred: { select: { name: true, phone: true } } } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.tenant.findUnique({ where: { id: tenantId } }),
+    ]);
+
+    // Ensure wallets exist in batch without sequential blocking loop
+    const customersWithoutWallet = rawCustomers.filter((c) => !c.wallets || c.wallets.length === 0);
+    if (customersWithoutWallet.length > 0) {
+      await prisma.wallet.createMany({
+        data: customersWithoutWallet.map((c) => ({
+          tenantId,
+          customerId: c.id,
+          balance: 0,
+        })),
+        skipDuplicates: true,
+      }).catch(() => {});
+    }
 
     const trainerSummaries = trainers.map((t) => {
       const ratings = t.evaluations.map((e) => e.rating);
@@ -125,31 +160,6 @@ export async function GET(request: Request) {
       };
     });
 
-    // Pending payments requiring admin verification
-    const pendingPayments = await prisma.payment.findMany({
-      where: { tenantId, status: 'PENDING_VERIFICATION' },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    const evaluations = await prisma.evaluation.findMany({
-      where: { tenantId },
-      include: {
-        trainer: { select: { id: true, name: true } },
-        branch: { select: { id: true, name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // Auto-create missing wallets for any existing customer safely
-    const allCustomersList = await prisma.customer.findMany({ where: { tenantId } });
-    for (const c of allCustomersList) {
-      await prisma.wallet.upsert({
-        where: { customerId: c.id },
-        update: {},
-        create: { tenantId, customerId: c.id, balance: 0 },
-      }).catch(() => {});
-    }
-
     const wallets = await prisma.wallet.findMany({
       where: { tenantId },
       include: {
@@ -163,29 +173,12 @@ export async function GET(request: Request) {
       orderBy: { createdAt: 'desc' },
     });
 
-    const rawCustomers = await prisma.customer.findMany({
-      where: { tenantId },
-      include: {
-        wallets: {
-          include: { transactions: { orderBy: { createdAt: 'desc' } } },
-        },
-        referralsMade: {
-          include: { referred: { select: { name: true, phone: true } } },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
     const allCustomers = rawCustomers.map((c) => ({
       ...c,
       payments: allPayments.filter((p) => p.customerPhone === c.phone),
       evaluations: evaluations.filter((e) => e.customerId === c.id),
       referralsGiven: c.referralsMade,
     }));
-
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: tenantId },
-    });
 
     return NextResponse.json({
       tenant,

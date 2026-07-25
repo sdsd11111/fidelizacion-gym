@@ -32,8 +32,11 @@ export async function POST(request: Request) {
       email: staff.email,
     });
 
+    const redirectUrl = staff.role === 'SUPERADMIN' ? '/admin' : '/dashboard';
+
     const response = NextResponse.json({
       success: true,
+      redirectUrl,
       user: {
         id: staff.id,
         name: staff.name,
@@ -48,7 +51,7 @@ export async function POST(request: Request) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 7 * 24 * 60 * 60, // 7 days
+      maxAge: 365 * 24 * 60 * 60, // 1 year permanent session
     });
 
     return response;

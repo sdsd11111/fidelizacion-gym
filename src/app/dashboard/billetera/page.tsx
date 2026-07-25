@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Wallet, Search } from 'lucide-react';
+import { useDashboard } from '../layout';
 
 export default function WalletPage() {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, refreshData } = useDashboard();
 
   // Redeem form state
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -15,24 +15,6 @@ export default function WalletPage() {
 
   // Search state
   const [walletSearch, setWalletSearch] = useState('');
-
-  const loadData = async () => {
-    try {
-      const res = await fetch('/api/owner/dashboard');
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
 
   const handleRedeemWallet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,13 +36,13 @@ export default function WalletPage() {
 
       setRedeemSuccess(`¡Canje de $ ${parseFloat(redeemAmount).toFixed(2)} procesado exitosamente!`);
       setRedeemAmount('');
-      loadData();
+      refreshData();
     } catch (err: any) {
       setRedeemError(err.message);
     }
   };
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="p-8 text-center text-[#7A93B2] font-mono text-sm">
         Cargando Billetera & Canjes...
